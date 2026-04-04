@@ -1,0 +1,17 @@
+src/
+__tests__/
+*.test.ts
+*.spec.ts
+.env
+.env.*
+tsconfig.json
+tsconfig.tsbuildinfo
+.eslintrc*
+.prettierrc*
+coverage/
+.DS_Store
+*.log
+node_modules/
+.github/
+babel.config.js
+*.map

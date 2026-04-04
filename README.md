@@ -1,30 +1,30 @@
 # rn-studio
 
-> Live UI editor for React Native — inspect and edit components directly inside your iOS Simulator or Android Emulator.
+> Live UI editor for React Native. Inspect and edit any component directly inside the iOS Simulator or Android Emulator — changes are written to your source code automatically.
 
-`rn-studio` is a zero-production-cost devtool that turns your emulator into a live visual editor. Wrap your app, tap the floating bubble, tap any component on screen, and edit its styles from a native inspector panel. Edits are written straight back to your source files via AST rewriting, so Metro Fast Refresh updates the UI instantly and your git diff shows a clean, hand-edited change.
+[![npm version](https://img.shields.io/npm/v/rn-studio.svg)](https://www.npmjs.com/package/rn-studio)
+[![license](https://img.shields.io/npm/l/rn-studio.svg)](https://github.com/dgutierrezd/rn-studio/blob/main/LICENSE)
+[![platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue.svg)](https://github.com/dgutierrezd/rn-studio)
 
-## Features
+## What it does
 
-- 🎨 **Visual selection** — tap any component in your running app.
-- 🧩 **Inspector panel** — Styles / Tree / Props tabs, dark native UI.
-- ✍️ **Writes back to source** — powered by `@babel/parser` + `recast`, preserves formatting and comments.
-- ⚡ **Fast Refresh integrated** — edits are hot-reloaded in milliseconds.
-- 🪶 **Zero production overhead** — disabled via `__DEV__`; the provider short-circuits to `children` in release.
-- 📱 **Pure RN** — no native modules to link; ships as a pure JS package.
+rn-studio adds a floating bubble to your app in DEV mode. Tap it, tap any component, and a panel appears showing all its styles and the internal component tree. Edit a value — the change is written directly to your source file and Metro Fast Refresh updates the UI instantly. Zero impact on production.
 
-## Installation
+## Install
 
-```sh
-npm install --save-dev rn-studio
-# peer deps used for best-in-class UX (all optional)
-npm install react-native-reanimated react-native-gesture-handler \
-            react-native-safe-area-context react-native-haptic-feedback
+```bash
+npm install rn-studio
+```
+
+Peer dependencies:
+
+```bash
+npm install react-native-gesture-handler react-native-reanimated react-native-haptic-feedback react-native-safe-area-context
 ```
 
 ## Setup
 
-### 1. Register the babel plugin (dev only)
+### 1. Add the babel plugin
 
 ```js
 // babel.config.js
@@ -36,10 +36,29 @@ module.exports = {
 };
 ```
 
-### 2. Wrap your app
+### 2. Start the server (alongside Metro)
+
+```bash
+# Terminal 1
+npx react-native start
+
+# Terminal 2
+npm run studio
+```
+
+Add to your app's `package.json`:
+
+```json
+{
+  "scripts": {
+    "studio": "rn-studio-server"
+  }
+}
+```
+
+### 3. Wrap your App.tsx
 
 ```tsx
-// App.tsx
 import { StudioProvider } from 'rn-studio';
 
 export default function App() {
@@ -51,44 +70,47 @@ export default function App() {
 }
 ```
 
-### 3. Add the CLI server script
-
-```json
-// package.json
-{
-  "scripts": {
-    "studio": "rn-studio-server"
-  }
-}
-```
-
-### 4. Run both Metro and the studio server
-
-```sh
-npx react-native start   # Terminal 1 — Metro
-npm run studio           # Terminal 2 — rn-studio server (ws://localhost:7878)
-```
-
-Launch your app in the simulator. A floating 🎨 bubble appears in the corner. Tap it, tap any component, and start editing.
-
 ## How it works
 
-1. **Babel plugin** — at compile time, every JSX opening element gets a `__rnStudioSource` prop with `{ file, line, column, componentName }`.
-2. **Runtime overlay** — when selection mode is on, the overlay captures touches, walks the React fiber tree to find the nearest component with source metadata, then measures it for the highlight box.
-3. **WebSocket bridge** — the runtime sends `STYLE_CHANGE` messages over `ws://localhost:7878`.
-4. **AST engine** — the CLI server uses `recast` to reparse the target file, finds the exact `JSXOpeningElement` by `(line, column)`, upserts the style property, and writes the file back.
-5. **Fast Refresh** — Metro notices the file change and hot-reloads your app.
+| Layer | What it does |
+|---|---|
+| Babel plugin | Annotates every JSX element with file + line metadata at compile time |
+| Floating bubble | Toggles selection mode on tap |
+| Selection overlay | Tap any component to inspect it |
+| Inspector panel | Shows styles, component tree, and editable props |
+| WebSocket bridge | Sends changes from the app to the local CLI server |
+| AST engine | Locates and rewrites the exact prop in your source file |
+| Metro Fast Refresh | Picks up the file change and updates the UI |
 
-## State machine
+## API
 
+### `<StudioProvider>` props
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `boolean` | `false` | Show the studio UI |
+| `serverPort` | `number` | `7878` | CLI server port |
+| `bubblePosition` | `'bottom-right' \| 'bottom-left' \| 'top-right' \| 'top-left'` | `'bottom-right'` | Bubble starting corner |
+| `theme` | `'dark' \| 'light'` | `'dark'` | Panel theme |
+
+### `useStudio()`
+
+```ts
+const {
+  isActive,
+  isSelecting,
+  selectedComponent,
+  toggleActive,
+  selectComponent,
+  clearSelection,
+  updateStyle,
+} = useStudio();
 ```
-IDLE → (tap bubble) → ACTIVE → (tap component) → SELECTED
-                                        ↓
-                                     EDITING
-```
 
-Tapping the bubble again at any time returns to `IDLE` and releases touch interception.
+## Contributing
+
+Pull requests are welcome. For major changes, please open an issue first.
 
 ## License
 
-MIT
+MIT © [dgutierrezd](https://github.com/dgutierrezd)
