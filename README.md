@@ -12,9 +12,11 @@ rn-studio adds a floating bubble to your app in DEV mode. Tap it, tap any compon
 
 ## Demo
 
-https://github.com/dgutierrezd/rn-studio/releases/download/v0.2.0/rn-studio-demo.mov
+[![rn-studio demo — click to watch](https://raw.githubusercontent.com/dgutierrezd/rn-studio/main/docs/demo-thumbnail.png)](https://github.com/dgutierrezd/rn-studio/releases/download/v0.2.0/rn-studio-demo.mov)
 
 > Tap the floating bubble → selection mode activates → tap any component → the inspector panel slides up with the component's styles, tree, and props. Edit a value, and the source file is rewritten via AST in real time while Metro Fast Refresh re-renders the UI.
+>
+> _Click the thumbnail to watch the full demo video (20 MB, iPhone 15 Pro capture)._
 
 ## Install
 
