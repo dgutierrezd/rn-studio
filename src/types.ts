@@ -55,6 +55,15 @@ export interface StudioContextValue {
   selectComponent: (node: ComponentNode) => void;
   clearSelection: () => void;
   updateStyle: (key: string, value: string | number) => void;
+  /** Add a new style property to the selected component. */
+  addStyleProperty: (key: string, value: string | number | boolean) => void;
+  /** Undo the last style change across all components. */
+  undo: () => void;
+  /** Redo the last undone change. */
+  redo: () => void;
+  /** Current undo/redo stack depths, updated by server ACKs. */
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 /** WebSocket message protocol — discriminated union. */
@@ -76,6 +85,9 @@ export type StudioMessage =
         value: unknown;
       };
     }
+  | { type: 'UNDO' }
+  | { type: 'REDO' }
+  | { type: 'STACK_STATE'; payload: { undo: number; redo: number } }
   | { type: 'PING' }
   | { type: 'ACK'; payload: { success: boolean; message?: string } }
   | { type: 'ERROR'; payload: { message: string } };

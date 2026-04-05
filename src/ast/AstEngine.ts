@@ -29,6 +29,7 @@
 import * as parser from '@babel/parser';
 import * as recast from 'recast';
 import * as fs from 'fs';
+import { pushEdit } from './UndoStack';
 
 export interface RewriteOptions {
   file: string;
@@ -298,5 +299,15 @@ export async function rewriteStyle(opts: RewriteOptions): Promise<void> {
   }
 
   const output = recast.print(ast).code;
+
+  // No-op guard: don't touch the file if nothing actually changed.
+  if (output === source) return;
+
   fs.writeFileSync(file, output, 'utf-8');
+  pushEdit({
+    file,
+    before: source,
+    after: output,
+    label: `${key} = ${value}`,
+  });
 }

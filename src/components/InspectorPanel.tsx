@@ -73,7 +73,7 @@ const PanelChrome: React.FC<{
   setTab: (t: Tab) => void;
   onDismiss: () => void;
 }> = ({ tab, setTab, onDismiss }) => {
-  const { selectedComponent } = useStudio();
+  const { selectedComponent, undo, redo, canUndo, canRedo } = useStudio();
   return (
     <View>
       <View style={styles.handleWrap}>
@@ -83,12 +83,35 @@ const PanelChrome: React.FC<{
         <Text style={styles.title} numberOfLines={1}>
           {selectedComponent ? selectedComponent.componentName : 'Inspector'}
         </Text>
-        <TouchableOpacity
-          onPress={onDismiss}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <Text style={styles.close}>✕</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={undo}
+            disabled={!canUndo}
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+            style={[styles.headerBtn, !canUndo && styles.headerBtnDisabled]}
+          >
+            <Text style={[styles.headerBtnText, !canUndo && styles.headerBtnTextDisabled]}>
+              ↶
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={redo}
+            disabled={!canRedo}
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+            style={[styles.headerBtn, !canRedo && styles.headerBtnDisabled]}
+          >
+            <Text style={[styles.headerBtnText, !canRedo && styles.headerBtnTextDisabled]}>
+              ↷
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onDismiss}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={styles.headerBtn}
+          >
+            <Text style={styles.close}>✕</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <View style={styles.tabs}>
         <TabButton
@@ -215,8 +238,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  title: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  close: { color: '#888', fontSize: 18 },
+  title: { color: '#fff', fontSize: 16, fontWeight: '700', flex: 1 },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a1a',
+  },
+  headerBtnDisabled: {
+    backgroundColor: '#141414',
+  },
+  headerBtnText: {
+    color: '#7C9BFF',
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  headerBtnTextDisabled: {
+    color: '#333',
+  },
+  close: { color: '#888', fontSize: 16 },
   tabs: { flexDirection: 'row', backgroundColor: '#1a1a1a' },
   tab: { flex: 1, paddingVertical: 12, alignItems: 'center' },
   tabActive: { borderBottomWidth: 2, borderBottomColor: '#7C9BFF' },

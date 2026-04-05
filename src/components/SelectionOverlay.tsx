@@ -6,6 +6,7 @@ import {
   View,
 } from 'react-native';
 import { appRootRef, useStudio } from '../StudioProvider';
+import { autoScrollToComponent } from '../utils/autoScroll';
 import type { ComponentNode, SourceLocation, StyleProperty } from '../types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -284,6 +285,10 @@ export const SelectionOverlay: React.FC = () => {
             width: viewData.frame.width,
             height: viewData.frame.height,
           });
+          // Auto-scroll the nearest scrollable ancestor so the
+          // selected component ends up in the top 40% of the screen
+          // (visible above the inspector panel).
+          autoScrollToComponent(viewData.closestInstance, viewData.frame);
         }
         selectComponent(node);
         triggerHaptic('impactMedium');

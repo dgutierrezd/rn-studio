@@ -5,19 +5,21 @@
  *
  * Run alongside Metro:   npm run studio
  *
- * Responsibilities:
- *   1. Listen on ws://localhost:7878 for messages from the rn-studio runtime.
- *   2. On STYLE_CHANGE, dispatch to the AST engine which rewrites the
- *      source file. Metro's Fast Refresh instantly propagates the edit.
+ * Handles:
+ *   - STYLE_CHANGE → AST engine rewrites the source file
+ *   - UNDO / REDO  → pops/pushes the in-memory edit stack
+ *   - STACK_STATE broadcast so clients can enable/disable buttons
  */
 const { WebSocketServer } = require('ws');
 
-let rewriteStyle;
+let AstEngine;
+let UndoStack;
 try {
-  ({ rewriteStyle } = require('../dist/ast/AstEngine'));
+  AstEngine = require('../dist/ast/AstEngine');
+  UndoStack = require('../dist/ast/UndoStack');
 } catch (err) {
   console.error(
-    '[rn-studio] Unable to load dist/ast/AstEngine. Did you run `npm run build`?'
+    '[rn-studio] Unable to load dist modules. Did you run `npm run build`?',
   );
   console.error(err.message);
   process.exit(1);
@@ -29,8 +31,22 @@ const wss = new WebSocketServer({ port: PORT });
 console.log(`[rn-studio] Server running on ws://localhost:${PORT}`);
 console.log('[rn-studio] Waiting for React Native runtime to connect...');
 
+function broadcastStackState(ws) {
+  const state = UndoStack.getStackState();
+  const payload = JSON.stringify({ type: 'STACK_STATE', payload: state });
+  if (ws) {
+    ws.send(payload);
+  } else {
+    wss.clients.forEach((c) => {
+      if (c.readyState === 1) c.send(payload);
+    });
+  }
+}
+
 wss.on('connection', (ws) => {
   console.log('[rn-studio] Client connected');
+  // Sync new clients with the current stack depths.
+  broadcastStackState(ws);
 
   ws.on('message', async (raw) => {
     let msg;
@@ -41,7 +57,7 @@ wss.on('connection', (ws) => {
         JSON.stringify({
           type: 'ERROR',
           payload: { message: 'Invalid JSON payload' },
-        })
+        }),
       );
       return;
     }
@@ -54,7 +70,7 @@ wss.on('connection', (ws) => {
 
       if (msg.type === 'STYLE_CHANGE') {
         const { source, key, value } = msg.payload;
-        await rewriteStyle({
+        await AstEngine.rewriteStyle({
           file: source.file,
           line: source.line,
           column: source.column,
@@ -63,18 +79,65 @@ wss.on('connection', (ws) => {
         });
         ws.send(JSON.stringify({ type: 'ACK', payload: { success: true } }));
         console.log(
-          `[rn-studio] ✓ ${source.componentName} → ${key}: ${value}`
+          `[rn-studio] ✓ ${source.componentName} → ${key}: ${value}`,
         );
+        broadcastStackState();
+        return;
+      }
+
+      if (msg.type === 'UNDO') {
+        const entry = UndoStack.undo();
+        if (entry) {
+          console.log(`[rn-studio] ↶ undo: ${entry.label} (${entry.file})`);
+          ws.send(
+            JSON.stringify({
+              type: 'ACK',
+              payload: { success: true, message: 'undo' },
+            }),
+          );
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: 'ACK',
+              payload: { success: false, message: 'Nothing to undo' },
+            }),
+          );
+        }
+        broadcastStackState();
+        return;
+      }
+
+      if (msg.type === 'REDO') {
+        const entry = UndoStack.redo();
+        if (entry) {
+          console.log(`[rn-studio] ↷ redo: ${entry.label} (${entry.file})`);
+          ws.send(
+            JSON.stringify({
+              type: 'ACK',
+              payload: { success: true, message: 'redo' },
+            }),
+          );
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: 'ACK',
+              payload: { success: false, message: 'Nothing to redo' },
+            }),
+          );
+        }
+        broadcastStackState();
         return;
       }
 
       if (msg.type === 'PROP_CHANGE') {
-        // Reserved for future prop editing. Ack for now.
         ws.send(
           JSON.stringify({
             type: 'ACK',
-            payload: { success: true, message: 'PROP_CHANGE not yet implemented' },
-          })
+            payload: {
+              success: true,
+              message: 'PROP_CHANGE not yet implemented',
+            },
+          }),
         );
         return;
       }
@@ -84,7 +147,7 @@ wss.on('connection', (ws) => {
         JSON.stringify({
           type: 'ERROR',
           payload: { message: err && err.message ? err.message : String(err) },
-        })
+        }),
       );
     }
   });
