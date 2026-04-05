@@ -14,9 +14,11 @@ const { WebSocketServer } = require('ws');
 
 let AstEngine;
 let UndoStack;
+let PreviewState;
 try {
   AstEngine = require('../dist/ast/AstEngine');
   UndoStack = require('../dist/ast/UndoStack');
+  PreviewState = require('../dist/ast/PreviewState');
 } catch (err) {
   console.error(
     '[rn-studio] Unable to load dist modules. Did you run `npm run build`?',
@@ -129,6 +131,60 @@ wss.on('connection', (ws) => {
         return;
       }
 
+      if (msg.type === 'BEGIN_PREVIEW') {
+        const file = msg.payload && msg.payload.file;
+        if (file) {
+          PreviewState.begin(file);
+          console.log(`[rn-studio] ⋯ preview begin: ${file}`);
+        }
+        ws.send(JSON.stringify({ type: 'ACK', payload: { success: true } }));
+        return;
+      }
+
+      if (msg.type === 'COMMIT_PREVIEW') {
+        const result = PreviewState.commit();
+        if (result && result.editCount > 0) {
+          console.log(
+            `[rn-studio] ✓ preview commit: ${result.editCount} edit${
+              result.editCount === 1 ? '' : 's'
+            } (${result.file})`,
+          );
+        }
+        ws.send(
+          JSON.stringify({
+            type: 'ACK',
+            payload: {
+              success: true,
+              message: result ? `committed ${result.editCount}` : 'nothing to commit',
+            },
+          }),
+        );
+        broadcastStackState();
+        return;
+      }
+
+      if (msg.type === 'CANCEL_PREVIEW') {
+        const result = PreviewState.cancel();
+        if (result && result.editCount > 0) {
+          console.log(
+            `[rn-studio] ↺ preview cancel: reverted ${result.editCount} edit${
+              result.editCount === 1 ? '' : 's'
+            } (${result.file})`,
+          );
+        }
+        ws.send(
+          JSON.stringify({
+            type: 'ACK',
+            payload: {
+              success: true,
+              message: result ? `reverted ${result.editCount}` : 'nothing to cancel',
+            },
+          }),
+        );
+        broadcastStackState();
+        return;
+      }
+
       if (msg.type === 'PROP_CHANGE') {
         ws.send(
           JSON.stringify({
@@ -152,7 +208,16 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => console.log('[rn-studio] Client disconnected'));
+  ws.on('close', () => {
+    console.log('[rn-studio] Client disconnected');
+    // Abandon any in-flight preview so a stale buffer can't bleed
+    // into a later session on a different file.
+    if (PreviewState.isActive()) {
+      PreviewState.cancel();
+      console.log('[rn-studio] (preview auto-cancelled on disconnect)');
+      broadcastStackState();
+    }
+  });
 });
 
 process.on('SIGINT', () => {

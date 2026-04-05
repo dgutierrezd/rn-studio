@@ -30,6 +30,7 @@ import * as parser from '@babel/parser';
 import * as recast from 'recast';
 import * as fs from 'fs';
 import { pushEdit } from './UndoStack';
+import * as PreviewState from './PreviewState';
 
 export interface RewriteOptions {
   file: string;
@@ -304,10 +305,17 @@ export async function rewriteStyle(opts: RewriteOptions): Promise<void> {
   if (output === source) return;
 
   fs.writeFileSync(file, output, 'utf-8');
-  pushEdit({
-    file,
-    before: source,
-    after: output,
-    label: `${key} = ${value}`,
-  });
+
+  // If a preview is active on this file, absorb the edit into the
+  // preview buffer instead of pushing a new undo entry. Otherwise the
+  // edit is a regular committed change.
+  const absorbed = PreviewState.recordEdit(file);
+  if (!absorbed) {
+    pushEdit({
+      file,
+      before: source,
+      after: output,
+      label: `${key} = ${value}`,
+    });
+  }
 }

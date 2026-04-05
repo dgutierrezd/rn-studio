@@ -73,40 +73,90 @@ const PanelChrome: React.FC<{
   setTab: (t: Tab) => void;
   onDismiss: () => void;
 }> = ({ tab, setTab, onDismiss }) => {
-  const { selectedComponent, undo, redo, canUndo, canRedo } = useStudio();
+  const {
+    selectedComponent,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    hasPendingPreview,
+    commitPreview,
+    cancelPreview,
+  } = useStudio();
   return (
     <View>
       <View style={styles.handleWrap}>
         <View style={styles.handle} />
       </View>
       <View style={styles.header}>
-        <Text style={styles.title} numberOfLines={1}>
-          {selectedComponent ? selectedComponent.componentName : 'Inspector'}
-        </Text>
+        <View style={styles.titleWrap}>
+          <Text style={styles.title} numberOfLines={1}>
+            {selectedComponent ? selectedComponent.componentName : 'Inspector'}
+          </Text>
+          {hasPendingPreview && (
+            <View style={styles.previewBadge}>
+              <View style={styles.previewDot} />
+              <Text style={styles.previewBadgeText}>Preview</Text>
+            </View>
+          )}
+        </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={undo}
-            disabled={!canUndo}
-            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-            style={[styles.headerBtn, !canUndo && styles.headerBtnDisabled]}
-          >
-            <Text style={[styles.headerBtnText, !canUndo && styles.headerBtnTextDisabled]}>
-              ↶
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={redo}
-            disabled={!canRedo}
-            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-            style={[styles.headerBtn, !canRedo && styles.headerBtnDisabled]}
-          >
-            <Text style={[styles.headerBtnText, !canRedo && styles.headerBtnTextDisabled]}>
-              ↷
-            </Text>
-          </TouchableOpacity>
+          {hasPendingPreview ? (
+            <>
+              <TouchableOpacity
+                onPress={cancelPreview}
+                hitSlop={{ top: 12, bottom: 12, left: 6, right: 6 }}
+                style={[styles.headerBtn, styles.cancelBtn]}
+                accessibilityLabel="Cancel preview"
+              >
+                <Text style={styles.cancelBtnText}>↺</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={commitPreview}
+                hitSlop={{ top: 12, bottom: 12, left: 6, right: 6 }}
+                style={[styles.headerBtn, styles.commitBtn]}
+                accessibilityLabel="Commit preview"
+              >
+                <Text style={styles.commitBtnText}>✓</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                onPress={undo}
+                disabled={!canUndo}
+                hitSlop={{ top: 12, bottom: 12, left: 6, right: 6 }}
+                style={[styles.headerBtn, !canUndo && styles.headerBtnDisabled]}
+              >
+                <Text
+                  style={[
+                    styles.headerBtnText,
+                    !canUndo && styles.headerBtnTextDisabled,
+                  ]}
+                >
+                  ↶
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={redo}
+                disabled={!canRedo}
+                hitSlop={{ top: 12, bottom: 12, left: 6, right: 6 }}
+                style={[styles.headerBtn, !canRedo && styles.headerBtnDisabled]}
+              >
+                <Text
+                  style={[
+                    styles.headerBtnText,
+                    !canRedo && styles.headerBtnTextDisabled,
+                  ]}
+                >
+                  ↷
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
           <TouchableOpacity
             onPress={onDismiss}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
             style={styles.headerBtn}
           >
             <Text style={styles.close}>✕</Text>
@@ -238,7 +288,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  title: { color: '#fff', fontSize: 16, fontWeight: '700', flex: 1 },
+  titleWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  title: { color: '#fff', fontSize: 16, fontWeight: '700', flexShrink: 1 },
+  previewBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(124,155,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(124,155,255,0.4)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  previewDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#7C9BFF',
+  },
+  previewBadgeText: {
+    color: '#7C9BFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -263,6 +343,26 @@ const styles = StyleSheet.create({
   },
   headerBtnTextDisabled: {
     color: '#333',
+  },
+  cancelBtn: {
+    backgroundColor: 'rgba(251,191,36,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.4)',
+  },
+  cancelBtnText: {
+    color: '#FBBF24',
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  commitBtn: {
+    backgroundColor: '#7C9BFF',
+  },
+  commitBtnText: {
+    color: '#0a0a0a',
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 18,
   },
   close: { color: '#888', fontSize: 16 },
   tabs: { flexDirection: 'row', backgroundColor: '#1a1a1a' },

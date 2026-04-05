@@ -71,7 +71,11 @@ const StudioProviderInner: React.FC<{
     useState<ComponentNode | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [hasPendingPreview, setHasPendingPreview] = useState(false);
   const bridgeRef = useRef<WebSocketBridge | null>(null);
+  // Keep the current preview file in a ref so effect cleanup can
+  // auto-commit without re-running every render.
+  const previewFileRef = useRef<string | null>(null);
 
   if (!bridgeRef.current) {
     bridgeRef.current = new WebSocketBridge(serverPort);
@@ -133,23 +137,49 @@ const StudioProviderInner: React.FC<{
     };
   }, []);
 
+  /**
+   * Tell the server to consolidate any pending preview edits into a
+   * single undo entry. Safe to call even if no preview is active.
+   */
+  const autoCommitPreview = useCallback(() => {
+    if (previewFileRef.current) {
+      bridgeRef.current?.send({ type: 'COMMIT_PREVIEW' });
+      previewFileRef.current = null;
+    }
+    setHasPendingPreview(false);
+  }, []);
+
   const toggleActive = useCallback(() => {
+    autoCommitPreview();
     setState((s) => {
       if (s === 'IDLE') return 'ACTIVE';
       setSelectedComponent(null);
       return 'IDLE';
     });
-  }, []);
+  }, [autoCommitPreview]);
 
-  const selectComponent = useCallback((node: ComponentNode) => {
-    setSelectedComponent(node);
-    setState('SELECTED');
-  }, []);
+  const selectComponent = useCallback(
+    (node: ComponentNode) => {
+      // If switching components, auto-commit the previous preview.
+      autoCommitPreview();
+      setSelectedComponent(node);
+      setState('SELECTED');
+      // Begin a fresh preview for the new selection's file so any
+      // style edits land in the preview buffer, not the main stack.
+      bridgeRef.current?.send({
+        type: 'BEGIN_PREVIEW',
+        payload: { file: node.source.file },
+      });
+      previewFileRef.current = node.source.file;
+    },
+    [autoCommitPreview],
+  );
 
   const clearSelection = useCallback(() => {
+    autoCommitPreview();
     setSelectedComponent(null);
     setState('ACTIVE');
-  }, []);
+  }, [autoCommitPreview]);
 
   const updateStyle = useCallback(
     (key: string, value: string | number) => {
@@ -159,6 +189,7 @@ const StudioProviderInner: React.FC<{
         type: 'STYLE_CHANGE',
         payload: { source: current.source, key, value },
       });
+      setHasPendingPreview(true);
       // Optimistically update the local styles list so the editor
       // reflects the new value without a round-trip.
       setSelectedComponent({
@@ -179,6 +210,7 @@ const StudioProviderInner: React.FC<{
         type: 'STYLE_CHANGE',
         payload: { source: current.source, key, value },
       });
+      setHasPendingPreview(true);
       setSelectedComponent({
         ...current,
         styles: upsertLocalStyle(current.styles, key, value),
@@ -193,6 +225,49 @@ const StudioProviderInner: React.FC<{
   const redo = useCallback(() => {
     bridgeRef.current?.send({ type: 'REDO' });
   }, []);
+
+  const commitPreview = useCallback(() => {
+    if (!previewFileRef.current) {
+      setHasPendingPreview(false);
+      return;
+    }
+    bridgeRef.current?.send({ type: 'COMMIT_PREVIEW' });
+    // Immediately re-open a fresh preview buffer on the same file so
+    // the user can keep editing the same component without losing
+    // preview safety on the next change.
+    const file = previewFileRef.current;
+    bridgeRef.current?.send({
+      type: 'BEGIN_PREVIEW',
+      payload: { file },
+    });
+    setHasPendingPreview(false);
+  }, []);
+
+  const cancelPreview = useCallback(() => {
+    if (!previewFileRef.current) {
+      setHasPendingPreview(false);
+      return;
+    }
+    bridgeRef.current?.send({ type: 'CANCEL_PREVIEW' });
+    // After the server restores the file, Metro Fast Refresh will
+    // re-render the component with its original styles. We also clear
+    // the local optimistic style list on the selected component so
+    // the editor reflects the restored values (they'll refill the next
+    // time the user taps the component).
+    const file = previewFileRef.current;
+    setHasPendingPreview(false);
+    if (selectedComponent) {
+      setSelectedComponent({
+        ...selectedComponent,
+        styles: [],
+      });
+    }
+    // Re-open a fresh preview buffer on the same file.
+    bridgeRef.current?.send({
+      type: 'BEGIN_PREVIEW',
+      payload: { file },
+    });
+  }, [selectedComponent]);
 
   const setAppRootRef = useCallback((r: any) => {
     appRootRef.current = r;
@@ -211,6 +286,9 @@ const StudioProviderInner: React.FC<{
     redo,
     canUndo,
     canRedo,
+    hasPendingPreview,
+    commitPreview,
+    cancelPreview,
   };
 
   return (

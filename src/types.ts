@@ -64,6 +64,15 @@ export interface StudioContextValue {
   /** Current undo/redo stack depths, updated by server ACKs. */
   canUndo: boolean;
   canRedo: boolean;
+  /**
+   * Preview mode: true while the current selection has unsaved edits
+   * held in the server's preview buffer. Commit (✓) consolidates
+   * them into a single undo entry; cancel (↺) restores the file to
+   * its state at the moment the component was selected.
+   */
+  hasPendingPreview: boolean;
+  commitPreview: () => void;
+  cancelPreview: () => void;
 }
 
 /** WebSocket message protocol — discriminated union. */
@@ -88,6 +97,9 @@ export type StudioMessage =
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'STACK_STATE'; payload: { undo: number; redo: number } }
+  | { type: 'BEGIN_PREVIEW'; payload: { file: string } }
+  | { type: 'COMMIT_PREVIEW' }
+  | { type: 'CANCEL_PREVIEW' }
   | { type: 'PING' }
   | { type: 'ACK'; payload: { success: boolean; message?: string } }
   | { type: 'ERROR'; payload: { message: string } };
