@@ -10,6 +10,12 @@
 
 rn-studio adds a floating bubble to your app in DEV mode. Tap it, tap any component, and a panel appears showing all its styles and the internal component tree. Edit a value — the change is written directly to your source file and Metro Fast Refresh updates the UI instantly. Zero impact on production.
 
+## Demo
+
+https://github.com/dgutierrezd/rn-studio/releases/download/v0.2.0/rn-studio-demo.mov
+
+> Tap the floating bubble → selection mode activates → tap any component → the inspector panel slides up with the component's styles, tree, and props. Edit a value, and the source file is rewritten via AST in real time while Metro Fast Refresh re-renders the UI.
+
 ## Install
 
 ```bash
