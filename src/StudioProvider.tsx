@@ -17,6 +17,7 @@ import {
   saveLastSelection,
 } from './utils/persistence';
 import { findFiberBySource } from './utils/findFiberBySource';
+import { extractStylesFromFiber } from './utils/extractStyles';
 import type {
   BubblePosition,
   ComponentNode,
@@ -122,7 +123,7 @@ const StudioProviderInner: React.FC<{
           componentName: saved.componentName,
           source: saved,
           props,
-          styles: [],
+          styles: extractStylesFromFiber(fiber),
           children: [],
         };
         // Silently restore in ACTIVE state so the user can tap the
@@ -135,6 +136,27 @@ const StudioProviderInner: React.FC<{
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  /**
+   * Re-read the currently selected component's styles from the live
+   * React fiber tree. Called after undo/redo/cancel operations where
+   * the file on disk has changed and Metro Fast Refresh has committed
+   * new props to the component. Without this, the inspector would
+   * show stale or empty style lists.
+   */
+  const refreshSelection = useCallback(() => {
+    setSelectedComponent((prev) => {
+      if (!prev) return prev;
+      const fiber = findFiberBySource(prev.source);
+      if (!fiber) return prev;
+      const props = (fiber.memoizedProps || {}) as Record<string, unknown>;
+      return {
+        ...prev,
+        props,
+        styles: extractStylesFromFiber(fiber),
+      };
+    });
   }, []);
 
   /**
@@ -219,12 +241,24 @@ const StudioProviderInner: React.FC<{
     [selectedComponent],
   );
 
+  /**
+   * Wait for Metro Fast Refresh to commit the updated file into the
+   * running JS bundle, then re-read the selected component's styles
+   * from the live fiber tree. ~350 ms covers typical Fast Refresh
+   * latencies on both iOS Simulator and Android Emulator.
+   */
+  const scheduleRefresh = useCallback(() => {
+    setTimeout(refreshSelection, 350);
+  }, [refreshSelection]);
+
   const undo = useCallback(() => {
     bridgeRef.current?.send({ type: 'UNDO' });
-  }, []);
+    scheduleRefresh();
+  }, [scheduleRefresh]);
   const redo = useCallback(() => {
     bridgeRef.current?.send({ type: 'REDO' });
-  }, []);
+    scheduleRefresh();
+  }, [scheduleRefresh]);
 
   const commitPreview = useCallback(() => {
     if (!previewFileRef.current) {
@@ -250,24 +284,19 @@ const StudioProviderInner: React.FC<{
     }
     bridgeRef.current?.send({ type: 'CANCEL_PREVIEW' });
     // After the server restores the file, Metro Fast Refresh will
-    // re-render the component with its original styles. We also clear
-    // the local optimistic style list on the selected component so
-    // the editor reflects the restored values (they'll refill the next
-    // time the user taps the component).
+    // re-render the component with its original styles. Refresh the
+    // inspector's style list from the live fiber so the editor
+    // reflects the restored values.
     const file = previewFileRef.current;
     setHasPendingPreview(false);
-    if (selectedComponent) {
-      setSelectedComponent({
-        ...selectedComponent,
-        styles: [],
-      });
-    }
-    // Re-open a fresh preview buffer on the same file.
+    scheduleRefresh();
+    // Re-open a fresh preview buffer on the same file so the next
+    // round of edits stays safely sandboxed.
     bridgeRef.current?.send({
       type: 'BEGIN_PREVIEW',
       payload: { file },
     });
-  }, [selectedComponent]);
+  }, [scheduleRefresh]);
 
   const setAppRootRef = useCallback((r: any) => {
     appRootRef.current = r;

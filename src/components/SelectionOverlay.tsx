@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { appRootRef, useStudio } from '../StudioProvider';
 import { autoScrollToComponent } from '../utils/autoScroll';
+import { extractStyles } from '../utils/extractStyles';
 import type { ComponentNode, SourceLocation, StyleProperty } from '../types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -46,40 +47,7 @@ function triggerHaptic(type: string) {
   } catch {}
 }
 
-function inferStyleType(
-  key: string,
-  value: string | number,
-): StyleProperty['type'] {
-  if (typeof value === 'number') return 'number';
-  if (typeof value === 'boolean') return 'boolean';
-  if (typeof value === 'string') {
-    if (
-      /color/i.test(key) ||
-      /^#[0-9a-f]{3,8}$/i.test(value) ||
-      /^rgba?\(/i.test(value) ||
-      /^hsla?\(/i.test(value)
-    ) {
-      return 'color';
-    }
-    return 'string';
-  }
-  return 'string';
-}
-
-function extractStyles(rawStyle: unknown): StyleProperty[] {
-  const flat = (StyleSheet.flatten(rawStyle as any) || {}) as Record<
-    string,
-    any
-  >;
-  const out: StyleProperty[] = [];
-  for (const key of Object.keys(flat)) {
-    const value = flat[key];
-    if (value == null) continue;
-    if (typeof value === 'object') continue; // skip nested (shadowOffset etc.)
-    out.push({ key, value, type: inferStyleType(key, value) });
-  }
-  return out;
-}
+// extractStyles now lives in ../utils/extractStyles for reuse.
 
 /**
  * Excludes known library paths so the AST engine only ever rewrites
