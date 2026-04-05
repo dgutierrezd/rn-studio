@@ -42,7 +42,10 @@ export const StyleEditor: React.FC = () => {
     <FlatList
       data={selectedComponent.styles}
       keyExtractor={(s) => s.key}
-      contentContainerStyle={styles.list}
+      style={{ flex: 1 }}
+      contentContainerStyle={[styles.list, { paddingBottom: 40 }]}
+      showsVerticalScrollIndicator
+      keyboardShouldPersistTaps="handled"
       renderItem={({ item }) => (
         <StyleRow
           property={item}
@@ -103,7 +106,7 @@ const StyleRow: React.FC<RowProps> = ({ property, onCommit }) => {
           keyboardType={property.type === 'number' ? 'numeric' : 'default'}
           autoCapitalize="none"
           autoCorrect={false}
-          selectionColor="#C6F135"
+          selectionColor="#7C9BFF"
           placeholderTextColor="#666"
         />
         {ackVisible && <Text style={styles.check}>✓</Text>}
@@ -147,7 +150,7 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: '#1a1a1a',
-    color: '#C6F135',
+    color: '#7C9BFF',
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -157,7 +160,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   check: {
-    color: '#C6F135',
+    color: '#7C9BFF',
     marginLeft: 8,
     fontSize: 14,
     fontWeight: '700',

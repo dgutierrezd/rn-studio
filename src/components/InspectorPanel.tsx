@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Dimensions,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -10,95 +12,58 @@ import { useStudio } from '../StudioProvider';
 import { StyleEditor } from './StyleEditor';
 import { ComponentTree } from './ComponentTree';
 
-// Reanimated is a declared peer dependency. We attempt to use it for
-// the spring-based slide, falling back to the stock Animated API so the
-// overlay remains functional in environments where reanimated is not
-// yet configured.
-let Reanimated: any = null;
-let useSharedValue: any = null;
-let useAnimatedStyle: any = null;
-let withSpring: any = null;
-let withTiming: any = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const r = require('react-native-reanimated');
-  Reanimated = r.default;
-  useSharedValue = r.useSharedValue;
-  useAnimatedStyle = r.useAnimatedStyle;
-  withSpring = r.withSpring;
-  withTiming = r.withTiming;
-} catch {}
-
 type Tab = 'styles' | 'tree' | 'props';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const PANEL_HEIGHT = SCREEN_HEIGHT * 0.6;
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const PANEL_HEIGHT = Math.round(SCREEN_HEIGHT * 0.6);
 
 /**
  * InspectorPanel
  *
  * Bottom sheet shown when a component is selected. Three tabs:
- * Styles | Tree | Props. Slides up with a spring animation.
+ * Styles | Tree | Props. Slides up with a spring animation powered
+ * by the stock `Animated` API — no reanimated dependency, so there's
+ * no worklets babel plugin requirement on the consumer side.
  */
 export const InspectorPanel: React.FC = () => {
   const { selectedComponent, clearSelection } = useStudio();
   const [tab, setTab] = useState<Tab>('styles');
-
+  const translateY = useRef(new Animated.Value(PANEL_HEIGHT)).current;
   const visible = !!selectedComponent;
 
-  if (Reanimated && useSharedValue) {
-    return (
-      <ReanimatedPanel visible={visible} onDismiss={clearSelection} tab={tab} setTab={setTab} />
-    );
-  }
-
-  // Fallback: render plainly when reanimated is unavailable.
-  if (!visible) return null;
-  return (
-    <View style={[styles.panel, { transform: [{ translateY: 0 }] }]}>
-      <PanelChrome tab={tab} setTab={setTab} onDismiss={clearSelection} />
-      {tab === 'styles' && <StyleEditor />}
-      {tab === 'tree' && <ComponentTree />}
-      {tab === 'props' && <PropsView />}
-    </View>
-  );
-};
-
-const ReanimatedPanel: React.FC<{
-  visible: boolean;
-  onDismiss: () => void;
-  tab: Tab;
-  setTab: (t: Tab) => void;
-}> = ({ visible, onDismiss, tab, setTab }) => {
-  const translateY = useSharedValue(PANEL_HEIGHT);
-
   useEffect(() => {
-    translateY.value = visible
-      ? withSpring(0, { damping: 20, stiffness: 200 })
-      : withTiming(PANEL_HEIGHT, { duration: 220 });
+    Animated.spring(translateY, {
+      toValue: visible ? 0 : PANEL_HEIGHT,
+      useNativeDriver: true,
+      damping: 20,
+      stiffness: 200,
+      mass: 1,
+    }).start();
   }, [visible, translateY]);
 
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
-
-  if (!visible) return null;
-
-  const AnimatedView = Reanimated.View;
+  if (!selectedComponent) return null;
 
   return (
     <>
       <TouchableOpacity
         activeOpacity={1}
-        onPress={onDismiss}
+        onPress={clearSelection}
         style={styles.backdrop}
       />
-      <AnimatedView style={[styles.panel, animStyle]}>
-        <PanelChrome tab={tab} setTab={setTab} onDismiss={onDismiss} />
-        {tab === 'styles' && <StyleEditor />}
-        {tab === 'tree' && <ComponentTree />}
-        {tab === 'props' && <PropsView />}
-      </AnimatedView>
+      <Animated.View
+        style={[styles.panel, { transform: [{ translateY }] }]}
+      >
+        <PanelChrome
+          tab={tab}
+          setTab={setTab}
+          onDismiss={clearSelection}
+        />
+        <View style={styles.tabBody}>
+          {tab === 'styles' && <StyleEditor />}
+          {tab === 'tree' && <ComponentTree />}
+          {tab === 'props' && <PropsView />}
+        </View>
+      </Animated.View>
     </>
   );
 };
@@ -118,40 +83,59 @@ const PanelChrome: React.FC<{
         <Text style={styles.title} numberOfLines={1}>
           {selectedComponent ? selectedComponent.componentName : 'Inspector'}
         </Text>
-        <TouchableOpacity onPress={onDismiss} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <TouchableOpacity
+          onPress={onDismiss}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
           <Text style={styles.close}>✕</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.tabs}>
-        <TabButton label="Styles" active={tab === 'styles'} onPress={() => setTab('styles')} />
-        <TabButton label="Tree" active={tab === 'tree'} onPress={() => setTab('tree')} />
-        <TabButton label="Props" active={tab === 'props'} onPress={() => setTab('props')} />
+        <TabButton
+          label="Styles"
+          active={tab === 'styles'}
+          onPress={() => setTab('styles')}
+        />
+        <TabButton
+          label="Tree"
+          active={tab === 'tree'}
+          onPress={() => setTab('tree')}
+        />
+        <TabButton
+          label="Props"
+          active={tab === 'props'}
+          onPress={() => setTab('props')}
+        />
       </View>
     </View>
   );
 };
 
-const TabButton: React.FC<{ label: string; active: boolean; onPress: () => void }> = ({
-  label,
-  active,
-  onPress,
-}) => (
-  <TouchableOpacity style={[styles.tab, active && styles.tabActive]} onPress={onPress}>
-    <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
+const TabButton: React.FC<{
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}> = ({ label, active, onPress }) => (
+  <TouchableOpacity
+    style={[styles.tab, active && styles.tabActive]}
+    onPress={onPress}
+  >
+    <Text style={[styles.tabText, active && styles.tabTextActive]}>
+      {label}
+    </Text>
   </TouchableOpacity>
 );
 
 const PropsView: React.FC = () => {
   const { selectedComponent } = useStudio();
-  if (!selectedComponent) {
-    return (
-      <View style={styles.empty}>
-        <Text style={styles.emptyText}>No component selected</Text>
-      </View>
-    );
-  }
-  const entries = Object.entries(selectedComponent.props).filter(
-    ([k]) => k !== 'style' && k !== 'children' && k !== '__rnStudioSource'
+  if (!selectedComponent) return null;
+  const entries = Object.entries(selectedComponent.props || {}).filter(
+    ([k]) =>
+      k !== 'style' &&
+      k !== 'children' &&
+      k !== '__rnStudioSource' &&
+      k !== '__source' &&
+      k !== '__self',
   );
   if (!entries.length) {
     return (
@@ -161,16 +145,20 @@ const PropsView: React.FC = () => {
     );
   }
   return (
-    <View style={{ padding: 16 }}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+      showsVerticalScrollIndicator
+    >
       {entries.map(([k, v]) => (
         <View key={k} style={styles.propRow}>
           <Text style={styles.propKey}>{k}</Text>
-          <Text style={styles.propValue} numberOfLines={2}>
+          <Text style={styles.propValue} numberOfLines={4}>
             {safeStringify(v)}
           </Text>
         </View>
       ))}
-    </View>
+    </ScrollView>
   );
 };
 
@@ -212,6 +200,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 12,
   },
+  tabBody: { flex: 1, minHeight: 0 },
   handleWrap: { alignItems: 'center', paddingTop: 8 },
   handle: {
     width: 40,
@@ -226,36 +215,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  title: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  close: {
-    color: '#888',
-    fontSize: 18,
-  },
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: '#1a1a1a',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  tabActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#C6F135',
-  },
-  tabText: {
-    color: '#888',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  tabTextActive: {
-    color: '#C6F135',
-  },
+  title: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  close: { color: '#888', fontSize: 18 },
+  tabs: { flexDirection: 'row', backgroundColor: '#1a1a1a' },
+  tab: { flex: 1, paddingVertical: 12, alignItems: 'center' },
+  tabActive: { borderBottomWidth: 2, borderBottomColor: '#7C9BFF' },
+  tabText: { color: '#888', fontSize: 13, fontWeight: '600' },
+  tabTextActive: { color: '#7C9BFF' },
   empty: { padding: 32, alignItems: 'center' },
   emptyText: { color: '#888', fontSize: 13 },
   propRow: {
@@ -263,16 +229,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#222',
   },
-  propKey: {
-    color: '#C6F135',
-    fontSize: 12,
-    fontFamily: 'Menlo',
-    fontWeight: '600',
-  },
-  propValue: {
-    color: '#ddd',
-    fontSize: 12,
-    fontFamily: 'Menlo',
-    marginTop: 2,
-  },
+  propKey: { color: '#7C9BFF', fontSize: 12, fontWeight: '600' },
+  propValue: { color: '#ddd', fontSize: 12, marginTop: 2 },
 });

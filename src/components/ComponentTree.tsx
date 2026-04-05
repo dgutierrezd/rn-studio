@@ -21,7 +21,11 @@ export const ComponentTree: React.FC = () => {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={[styles.container, { paddingBottom: 40 }]}
+      showsVerticalScrollIndicator
+    >
       <TreeNode node={selectedComponent} depth={0} />
     </ScrollView>
   );
@@ -68,7 +72,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#222',
   },
   name: {
-    color: '#C6F135',
+    color: '#7C9BFF',
     fontSize: 14,
     fontWeight: '600',
     fontFamily: 'Menlo',

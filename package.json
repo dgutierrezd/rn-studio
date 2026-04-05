@@ -1,6 +1,6 @@
 {
   "name": "rn-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Live UI editor for React Native — inspect and edit components directly in your emulator",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -27,16 +27,16 @@
   "peerDependencies": {
     "react": ">=18",
     "react-native": ">=0.70",
-    "react-native-gesture-handler": ">=2.0",
-    "react-native-reanimated": ">=3.0",
     "react-native-haptic-feedback": ">=2.0",
     "react-native-safe-area-context": ">=4.0"
   },
   "peerDependenciesMeta": {
-    "react-native-gesture-handler": { "optional": true },
-    "react-native-reanimated": { "optional": true },
-    "react-native-haptic-feedback": { "optional": true },
-    "react-native-safe-area-context": { "optional": true }
+    "react-native-haptic-feedback": {
+      "optional": true
+    },
+    "react-native-safe-area-context": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@babel/parser": "^7.23.0",

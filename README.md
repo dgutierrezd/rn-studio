@@ -16,11 +16,15 @@ rn-studio adds a floating bubble to your app in DEV mode. Tap it, tap any compon
 npm install rn-studio
 ```
 
-Peer dependencies:
+Optional peer dependencies (already present in most RN apps — install only if missing):
 
 ```bash
-npm install react-native-gesture-handler react-native-reanimated react-native-haptic-feedback react-native-safe-area-context
+npm install react-native-safe-area-context react-native-haptic-feedback
 ```
+
+> `rn-studio@0.2+` drops the hard peer on `react-native-reanimated` and
+> `react-native-gesture-handler`. The inspector panel uses the stock
+> `Animated` API so consumers don't need the worklets babel plugin.
 
 ## Setup
 

@@ -1,4 +1,11 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, {
+  MutableRefObject,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import { View } from 'react-native';
 import { StudioContext } from './context/StudioContext';
 import { WebSocketBridge } from './bridge/WebSocketBridge';
 import { FloatingBubble } from './components/FloatingBubble';
@@ -19,6 +26,15 @@ interface Props extends Partial<StudioConfig> {
   theme?: 'dark' | 'light';
   children: React.ReactNode;
 }
+
+/**
+ * Shared mutable ref to the app root view. Populated by `<StudioProvider>`
+ * and consumed by `<SelectionOverlay>` for hit-testing via the React
+ * DevTools `getInspectorDataForViewAtPoint` API. Exposing it at module
+ * scope avoids having to thread it through context (and keeps the
+ * context value shape unchanged for consumers).
+ */
+export const appRootRef: MutableRefObject<any> = { current: null };
 
 /**
  * <StudioProvider>
@@ -66,8 +82,8 @@ const StudioProviderInner: React.FC<{
     const bridge = bridgeRef.current!;
     bridge.connect();
     const off = bridge.on('ACK', () => {
-      // Success acks are surfaced to child editors via the per-row
-      // debounce timer; nothing else to do here for now.
+      // Per-editor success feedback is handled via the debounce timers
+      // in StyleEditor rows.
     });
     return () => {
       off();
@@ -115,9 +131,19 @@ const StudioProviderInner: React.FC<{
     updateStyle,
   };
 
+  // Wrap children in a ref'd host View so the SelectionOverlay can
+  // hit-test against the user's UI via Fabric's inspector data API.
+  // `collapsable={false}` guarantees the View remains a real native
+  // node that can be targeted by `getInspectorDataForViewAtPoint`.
+  const setAppRootRef = (r: any) => {
+    appRootRef.current = r;
+  };
+
   return (
     <StudioContext.Provider value={ctx}>
-      {children}
+      <View ref={setAppRootRef} collapsable={false} style={{ flex: 1 }}>
+        {children}
+      </View>
       <SelectionOverlay />
       <InspectorPanel />
       <FloatingBubble position={bubblePosition} />

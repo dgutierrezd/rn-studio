@@ -164,7 +164,7 @@ export const FloatingBubble: React.FC<Props> = ({ position = 'bottom-right' }) =
             { translateY: pan.y },
             { scale },
           ],
-          backgroundColor: isActive ? '#C6F135' : '#222',
+          backgroundColor: isActive ? '#7C9BFF' : '#222',
         },
       ]}
     >

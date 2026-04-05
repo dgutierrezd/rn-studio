@@ -1,111 +1,304 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Dimensions,
+  GestureResponderEvent,
   StyleSheet,
   View,
-  findNodeHandle,
-  UIManager,
 } from 'react-native';
-import { useStudio } from '../StudioProvider';
-import { buildComponentNode, findSourceOwner, fiberFromRef } from '../utils/fiberWalker';
-import type { Rect } from '../utils/measureComponent';
+import { appRootRef, useStudio } from '../StudioProvider';
+import type { ComponentNode, SourceLocation, StyleProperty } from '../types';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+// React Native's built-in inspector data API. Uses the React DevTools
+// hook under the hood and works on both the Fabric and legacy
+// architectures. We import it lazily so consumers that somehow run
+// this file in production don't trip on the dev-only module path.
+let getInspectorDataForViewAtPoint:
+  | ((
+      inspectedView: any,
+      x: number,
+      y: number,
+      cb: (viewData: any) => boolean | void,
+    ) => void)
+  | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const mod = require('react-native/src/private/devsupport/devmenu/elementinspector/getInspectorDataForViewAtPoint');
+  getInspectorDataForViewAtPoint = (mod && (mod.default || mod)) || null;
+} catch (e: any) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[rn-studio] Unable to load getInspectorDataForViewAtPoint:',
+    e && e.message,
+  );
+}
+
+function triggerHaptic(type: string) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Haptic = require('react-native-haptic-feedback').default;
+    Haptic.trigger(type, {
+      enableVibrateFallback: false,
+      ignoreAndroidSystemSettings: false,
+    });
+  } catch {}
+}
+
+function inferStyleType(
+  key: string,
+  value: string | number,
+): StyleProperty['type'] {
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'string') {
+    if (
+      /color/i.test(key) ||
+      /^#[0-9a-f]{3,8}$/i.test(value) ||
+      /^rgba?\(/i.test(value) ||
+      /^hsla?\(/i.test(value)
+    ) {
+      return 'color';
+    }
+    return 'string';
+  }
+  return 'string';
+}
+
+function extractStyles(rawStyle: unknown): StyleProperty[] {
+  const flat = (StyleSheet.flatten(rawStyle as any) || {}) as Record<
+    string,
+    any
+  >;
+  const out: StyleProperty[] = [];
+  for (const key of Object.keys(flat)) {
+    const value = flat[key];
+    if (value == null) continue;
+    if (typeof value === 'object') continue; // skip nested (shadowOffset etc.)
+    out.push({ key, value, type: inferStyleType(key, value) });
+  }
+  return out;
+}
+
+/**
+ * Excludes known library paths so the AST engine only ever rewrites
+ * files in the user's project.
+ */
+function isUserCodePath(file: string | undefined): boolean {
+  if (!file || typeof file !== 'string') return false;
+  if (file.indexOf('/node_modules/') !== -1) return false;
+  if (file.indexOf('react-native/Libraries/') !== -1) return false;
+  if (file.indexOf('react-native/src/') !== -1) return false;
+  if (file === 'unknown' || file === '<anonymous>') return false;
+  return true;
+}
+
+interface ResolvedSource {
+  source: SourceLocation;
+  props: Record<string, unknown>;
+  componentName: string;
+}
+
+function sourceFromProps(
+  p: Record<string, any> | null | undefined,
+  fallbackName: string | null,
+): SourceLocation | null {
+  if (!p) return null;
+  if (p.__rnStudioSource && p.__rnStudioSource.file) {
+    return {
+      file: p.__rnStudioSource.file,
+      line: p.__rnStudioSource.line,
+      column: p.__rnStudioSource.column || 0,
+      componentName:
+        p.__rnStudioSource.componentName || fallbackName || 'Component',
+    };
+  }
+  if (p.__source && p.__source.fileName) {
+    return {
+      file: p.__source.fileName,
+      line: p.__source.lineNumber,
+      column: p.__source.columnNumber || 0,
+      componentName: fallbackName || 'Component',
+    };
+  }
+  return null;
+}
+
+/**
+ * Walks a fiber's `.return` chain, reading each fiber's own
+ * memoizedProps for a source location. This is the correct strategy
+ * because `getInspectorDataForViewAtPoint`'s `hierarchy` items all
+ * share the deepest host's props, which is useless for mapping back
+ * to user JSX.
+ */
+function walkFiberForUserSource(fiber: any): ResolvedSource | null {
+  let current: any = fiber;
+  let libraryFallback: ResolvedSource | null = null;
+  let safety = 0;
+  while (current && safety < 200) {
+    safety++;
+    const p = current.memoizedProps;
+    if (p && typeof p === 'object') {
+      const src = sourceFromProps(
+        p,
+        (current.type && (current.type.displayName || current.type.name)) ||
+          null,
+      );
+      if (src) {
+        const resolved: ResolvedSource = {
+          source: src,
+          props: p,
+          componentName: src.componentName,
+        };
+        if (isUserCodePath(src.file)) return resolved;
+        if (!libraryFallback) libraryFallback = resolved;
+      }
+    }
+    current = current.return;
+  }
+  return libraryFallback;
+}
+
+/**
+ * Resolve the nearest user-code JSX source location from the data
+ * returned by `getInspectorDataForViewAtPoint`.
+ */
+function resolveSourceFromViewData(viewData: any): ResolvedSource | null {
+  if (!viewData) return null;
+
+  if (viewData.closestInstance) {
+    const found = walkFiberForUserSource(viewData.closestInstance);
+    if (found && isUserCodePath(found.source.file)) return found;
+    if (found) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[rn-studio] fiber walk only found library source:',
+        found.source.file,
+      );
+    }
+  }
+
+  const topSrc = sourceFromProps(viewData.props, null);
+  if (topSrc && isUserCodePath(topSrc.file)) {
+    return {
+      source: topSrc,
+      props: (viewData.props || {}) as Record<string, unknown>,
+      componentName: topSrc.componentName,
+    };
+  }
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[rn-studio] no user-code source found; closestInstance?',
+    !!viewData.closestInstance,
+    'topLevelSrc=',
+    topSrc && topSrc.file,
+  );
+  return null;
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 /**
  * SelectionOverlay
  *
  * Full-screen overlay that dims the app when selection mode is active
- * and draws a lime-green highlight box around the selected component.
- *
- * Touch resolution strategy: the overlay captures the touch, then asks
- * the UIManager which native view is under the touch point via
- * `findSubviewIn`. From that view ref we walk the fiber tree upwards
- * (see fiberWalker.ts) to find the nearest component with
- * `__rnStudioSource` metadata.
+ * and draws an accent-colored highlight box around the selected
+ * component. Touches are routed via `getInspectorDataForViewAtPoint`
+ * against the app root view (provided by StudioProvider via
+ * `appRootRef`). The nearest user-code fiber is then resolved by
+ * walking the fiber `.return` chain.
  */
 export const SelectionOverlay: React.FC = () => {
-  const { isActive, isSelecting, selectedComponent, selectComponent } = useStudio();
-  const rootRef = useRef<View>(null);
+  const { isActive, isSelecting, selectedComponent, selectComponent } =
+    useStudio();
   const [highlight, setHighlight] = useState<Rect | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
-  const borderOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(opacity, {
-      toValue: isActive ? 1 : 0,
+      toValue: isActive ? 0.3 : 0,
       duration: 200,
       useNativeDriver: true,
     }).start();
   }, [isActive, opacity]);
 
   useEffect(() => {
-    if (selectedComponent) {
-      Animated.timing(borderOpacity, {
-        toValue: 1,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      borderOpacity.setValue(0);
-    }
-  }, [selectedComponent, borderOpacity]);
+    if (!selectedComponent) setHighlight(null);
+  }, [selectedComponent]);
 
-  const handleTouch = (evt: any) => {
-    if (!isSelecting) return false;
-
+  const handleTouch = (evt: GestureResponderEvent) => {
+    if (!isSelecting) return;
     const { pageX, pageY } = evt.nativeEvent;
 
-    const rootHandle = findNodeHandle(rootRef.current);
-    if (!rootHandle) return true;
-
-    // findSubviewIn gives us the native view at a point. Then we climb
-    // the fiber tree to locate the nearest source-annotated owner.
-    try {
-      (UIManager as any).findSubviewIn(
-        rootHandle,
-        [pageX, pageY, 1, 1],
-        (_nativeX: number, _nativeY: number, _w: number, _h: number, tag: number) => {
-          if (!tag) return;
-          const fiber = fiberFromRef({ stateNode: { _nativeTag: tag } });
-          // Most RN versions expose the fiber via private keys on the
-          // underlying view component instance; the walker defensively
-          // searches for them. If no fiber is found we still draw a
-          // placeholder highlight at the touch location.
-          let owner: ReturnType<typeof findSourceOwner> = null;
-          if (fiber) owner = findSourceOwner(fiber);
-          if (owner) {
-            const node = buildComponentNode(owner.fiber, owner.source);
-            selectComponent(node);
-          }
-
-          // Draw highlight at touch point (approximate). A production
-          // implementation would call measureInWindow on the resolved
-          // native component for a pixel-perfect box.
-          setHighlight({
-            x: pageX - 30,
-            y: pageY - 30,
-            width: 60,
-            height: 60,
-          });
-        }
+    const appRoot = appRootRef && appRootRef.current;
+    if (!getInspectorDataForViewAtPoint || !appRoot) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[rn-studio] inspector API or app root ref not available',
+        {
+          hasAPI: !!getInspectorDataForViewAtPoint,
+          hasRoot: !!appRoot,
+        },
       );
-    } catch {
-      // UIManager.findSubviewIn is not available on every platform; in
-      // that case we still acknowledge the touch so the user gets
-      // feedback.
+      return;
     }
 
-    triggerHaptic('impactMedium');
-    return true;
+    try {
+      getInspectorDataForViewAtPoint(appRoot, pageX, pageY, (viewData: any) => {
+        if (!viewData) return false;
+
+        const resolved = resolveSourceFromViewData(viewData);
+        if (!resolved) {
+          if (viewData.frame) {
+            setHighlight({
+              x: viewData.frame.left,
+              y: viewData.frame.top,
+              width: viewData.frame.width,
+              height: viewData.frame.height,
+            });
+          }
+          return true;
+        }
+
+        const nodeStyles = extractStyles(
+          (resolved.props as Record<string, unknown>).style,
+        );
+        const node: ComponentNode = {
+          id: `${resolved.source.file}:${resolved.source.line}:${resolved.source.column}`,
+          componentName: resolved.componentName,
+          source: resolved.source,
+          props: resolved.props,
+          styles: nodeStyles,
+          children: [],
+        };
+
+        if (viewData.frame) {
+          setHighlight({
+            x: viewData.frame.left,
+            y: viewData.frame.top,
+            width: viewData.frame.width,
+            height: viewData.frame.height,
+          });
+        }
+        selectComponent(node);
+        triggerHaptic('impactMedium');
+        return true;
+      });
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.warn('[rn-studio] hit-test error:', err && err.message);
+    }
   };
 
   if (!isActive) return null;
 
-  const { width, height } = Dimensions.get('window');
-
   return (
     <View
-      ref={rootRef}
       pointerEvents={isSelecting ? 'box-only' : 'none'}
       style={StyleSheet.absoluteFill}
       onStartShouldSetResponder={() => isSelecting}
@@ -115,11 +308,11 @@ export const SelectionOverlay: React.FC = () => {
         pointerEvents="none"
         style={[
           StyleSheet.absoluteFill,
-          { backgroundColor: 'rgba(0,0,0,0.3)', opacity },
+          { backgroundColor: '#000', opacity },
         ]}
       />
       {highlight && (
-        <Animated.View
+        <View
           pointerEvents="none"
           style={{
             position: 'absolute',
@@ -128,24 +321,11 @@ export const SelectionOverlay: React.FC = () => {
             width: highlight.width,
             height: highlight.height,
             borderWidth: 2,
-            borderColor: '#C6F135',
+            borderColor: '#7C9BFF',
             borderRadius: 4,
-            opacity: borderOpacity,
           }}
         />
       )}
-      <View
-        pointerEvents="none"
-        style={{ position: 'absolute', width, height }}
-      />
     </View>
   );
 };
-
-function triggerHaptic(type: string) {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const Haptic = require('react-native-haptic-feedback').default;
-    Haptic.trigger(type, { enableVibrateFallback: false, ignoreAndroidSystemSettings: false });
-  } catch {}
-}
