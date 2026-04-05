@@ -1,6 +1,6 @@
 {
   "name": "rn-studio",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Live UI editor for React Native — inspect and edit components directly in your emulator",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
